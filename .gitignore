@@ -1,0 +1,48 @@
+# ── Node modules ──────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# ── Environment Variables ─────────────────────────
+# Crucial: Never commit .env files containing real secrets
+.env
+.env.*
+!.env.example
+backend/.env
+blockchain/.env
+frontend/.env
+
+# ── Frontend (Vite/React) ─────────────────────────
+frontend/dist/
+frontend/build/
+.eslintcache
+
+# ── Blockchain (Hardhat) ──────────────────────────
+blockchain/artifacts/
+blockchain/cache/
+blockchain/coverage/
+blockchain/coverage.json
+blockchain/typechain/
+blockchain/typechain-types/
+
+# ── macOS Specific ────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# ── IDEs / Editors ────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Application Logs & Misc ───────────────────────
+logs/
+*.log
+coverage/
