@@ -21,6 +21,22 @@ export const getMe = () =>
 export const getMyVotes = () =>
   instance.get('/api/auth/votes').then(r => r.data);
 
+export const getMyReputationEvents = (page = 1, limit = 20) =>
+  instance.get('/api/auth/reputation-events', { params: { page, limit } }).then(r => r.data);
+
+// Demo Endpoints
+export const demoDecay = (days = 5) =>
+  instance.post('/api/auth/demo/decay', { days }).then(r => r.data);
+
+export const demoReset = () =>
+  instance.post('/api/auth/demo/reset').then(r => r.data);
+
+export const demoVote = (outcome) =>
+  instance.post('/api/auth/demo/vote', { outcome }).then(r => r.data);
+
+export const seedDemoItems = () =>
+  instance.post('/api/admin/seed-demo').then(r => r.data);
+
 // News
 export const getNews = (page = 1, status = '', section = '', q = '') =>
   instance.get('/api/news', { params: { page, status: status || undefined, section: section || undefined, q: q || undefined } }).then(r => r.data);

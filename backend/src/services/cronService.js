@@ -33,17 +33,7 @@ async function runReputationSnapshot() {
     await snapshot.save();
     console.log(`[Cron] Database snapshot saved for epoch ${nextEpoch}`);
 
-    // Commit to blockchain
-    try {
-      const txHash = await blockchainService.logReputationSnapshot(nextEpoch, hexToBytes32(stateHash));
-      if (txHash) {
-        snapshot.onChainTxHash = txHash;
-        await snapshot.save();
-        console.log(`[Cron] Snapshot epoch ${nextEpoch} committed to blockchain. Tx: ${txHash}`);
-      }
-    } catch (e) {
-      console.warn('[Cron] Blockchain commit failed (non-fatal):', e.message);
-    }
+    // Blockchain commit removed: ERDS uses event-based logging directly in reputationService
   } catch (error) {
     console.error('[Cron] Reputation snapshot failed:', error.message);
   }

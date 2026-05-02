@@ -1,7 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
+import { useDecay } from '../hooks/useDecay';
 import { useState, useEffect } from 'react';
+import { demoDecay, demoReset } from '../utils/api';
 
 const DEMO_USERS = [
   { label: 'dp (Reviewer)', email: 'dp@jklu.edu.in', pass: 'demo123' },
@@ -17,11 +19,14 @@ const DEMO_USERS = [
 ];
 
 export default function Navbar() {
-  const { user, switchUser } = useAuth();
+  const { user, switchUser, refreshUser } = useAuth();
   const { theme, toggle } = useTheme();
   const location = useLocation();
   const [time, setTime] = useState(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   const [switching, setSwitching] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
+  
+  const decayedRep = useDecay(user);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -42,6 +47,16 @@ export default function Navbar() {
     setSwitching(false);
   }
 
+  async function handleDemoAction(action) {
+    try {
+      if (action === 'decay') await demoDecay(5);
+      if (action === 'reset') await demoReset();
+      await refreshUser();
+    } catch (e) {
+      console.error('Demo action failed', e);
+    }
+  }
+
   return (
     <div className="win-taskbar">
       <Link to="/" className="win-start-btn" style={{ textDecoration: 'none' }}>
@@ -58,6 +73,11 @@ export default function Navbar() {
         <Link to="/submit" className={`win-taskbar-item ${isActive('/submit')}`}>
           📝 Submit
         </Link>
+        {user && (
+          <Link to="/profile" className={`win-taskbar-item ${isActive('/profile')}`}>
+            👤 Account
+          </Link>
+        )}
       </div>
 
       <div className="win-taskbar-divider" />
@@ -71,19 +91,54 @@ export default function Navbar() {
         {theme === 'win98' ? '🎨 Modern' : '💾 Win98'}
       </button>
 
-      {/* User Switcher */}
+      {/* User Info & Demo Controls */}
       {user && (
-        <select
-          className="win-select"
-          style={{ fontSize: 11, maxWidth: 140 }}
-          value={user.email}
-          onChange={handleSwitch}
-          disabled={switching}
-        >
-          {DEMO_USERS.map(d => (
-            <option key={d.email} value={d.email}>{d.label}</option>
-          ))}
-        </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+          <select
+            className="win-select"
+            style={{ fontSize: 11, maxWidth: 140 }}
+            value={user.email}
+            onChange={handleSwitch}
+            disabled={switching}
+          >
+            {DEMO_USERS.map(d => (
+              <option key={d.email} value={d.email}>{d.label}</option>
+            ))}
+          </select>
+
+          {/* Reputation Display */}
+          <div 
+            className="win-inset" 
+            style={{ padding: '2px 8px', fontSize: 11, background: '#fff', display: 'flex', gap: '8px', alignItems: 'center', cursor: 'pointer' }}
+            onClick={() => setShowDemo(!showDemo)}
+          >
+            <span
+              style={{ fontWeight: 700, color: decayedRep < 10 ? '#c00' : '#000' }}
+              title="Effective reputation after time decay"
+            >
+              R: {decayedRep.toFixed(2)}
+            </span>
+            <span>▼</span>
+          </div>
+
+          {/* Floating Demo Panel */}
+          {showDemo && (
+            <div className="win-window" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 1000, minWidth: 200 }}>
+              <div className="win-titlebar">
+                <span className="win-titlebar-text">ERDS Demo Panel</span>
+                <button className="win-titlebar-btn" onClick={() => setShowDemo(false)}>✕</button>
+              </div>
+              <div className="win-content" style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: 8 }}>
+                <button className="win-btn" style={{ textAlign: 'left', fontSize: 11 }} onClick={() => handleDemoAction('decay')}>
+                  ⏳ Simulate 5-Day Decay
+                </button>
+                <button className="win-btn" style={{ textAlign: 'left', fontSize: 11 }} onClick={() => handleDemoAction('reset')}>
+                  🔄 Reset Demo State
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="win-taskbar-clock">

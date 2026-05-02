@@ -6,27 +6,6 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deploying contracts with:", deployer.address);
 
-  // Deploy SubmissionRegistry
-  const SubmissionRegistry = await ethers.getContractFactory("SubmissionRegistry");
-  const submissionRegistry = await SubmissionRegistry.deploy();
-  await submissionRegistry.waitForDeployment();
-  const subAddr = await submissionRegistry.getAddress();
-  console.log("SubmissionRegistry deployed to:", subAddr);
-
-  // Deploy VoteAuditLedger
-  const VoteAuditLedger = await ethers.getContractFactory("VoteAuditLedger");
-  const voteAuditLedger = await VoteAuditLedger.deploy();
-  await voteAuditLedger.waitForDeployment();
-  const voteAddr = await voteAuditLedger.getAddress();
-  console.log("VoteAuditLedger deployed to:", voteAddr);
-
-  // Deploy DecisionRegistry
-  const DecisionRegistry = await ethers.getContractFactory("DecisionRegistry");
-  const decisionRegistry = await DecisionRegistry.deploy();
-  await decisionRegistry.waitForDeployment();
-  const decAddr = await decisionRegistry.getAddress();
-  console.log("DecisionRegistry deployed to:", decAddr);
-
   // Deploy ReputationRegistry
   const ReputationRegistry = await ethers.getContractFactory("ReputationRegistry");
   const reputationRegistry = await ReputationRegistry.deploy();
@@ -56,9 +35,6 @@ async function main() {
     return content + `\n${key}=${value}`;
   }
 
-  envContent = setEnvVar(envContent, "SUBMISSION_REGISTRY_ADDRESS", subAddr);
-  envContent = setEnvVar(envContent, "VOTE_AUDIT_LEDGER_ADDRESS", voteAddr);
-  envContent = setEnvVar(envContent, "DECISION_REGISTRY_ADDRESS", decAddr);
   envContent = setEnvVar(envContent, "REPUTATION_REGISTRY_ADDRESS", repAddr);
 
   fs.writeFileSync(backendEnvPath, envContent);
@@ -71,9 +47,6 @@ async function main() {
   }
 
   const contracts = [
-    { name: "SubmissionRegistry", address: subAddr },
-    { name: "VoteAuditLedger", address: voteAddr },
-    { name: "DecisionRegistry", address: decAddr },
     { name: "ReputationRegistry", address: repAddr },
   ];
 

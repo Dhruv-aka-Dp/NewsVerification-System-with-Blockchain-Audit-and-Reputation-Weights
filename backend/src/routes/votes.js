@@ -2,14 +2,16 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const Vote = require('../models/Vote');
 const NewsItem = require('../models/NewsItem');
-const { authMiddleware, reviewerOnly, verifiedOnly } = require('../middleware/auth');
+const { authMiddleware, verifiedOnly } = require('../middleware/auth');
 const { voteLimiter } = require('../middleware/rateLimit');
 const { checkAnomaly } = require('../middleware/anomaly');
 const { computeWeight } = require('../services/weightService');
 const { evaluateItem } = require('../services/decisionService');
 const { broadcastVoteUpdate } = require('../services/socketService');
-const blockchainService = require('../services/blockchainService');
-const { sha256, hexToBytes32 } = require('../utils/hash');
+const { touchUserActivity } = require('../services/reputationService');
+const { canUserVote } = require('../services/reputationMath');
+const { withUserMetrics } = require('../utils/userView');
+const { sha256 } = require('../utils/hash');
 const User = require('../models/User');
 
 const router = express.Router();
@@ -42,6 +44,9 @@ router.post('/', authMiddleware, verifiedOnly, voteLimiter, async (req, res) => 
 
     const user = await User.findById(req.user.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!canUserVote(user)) {
+      return res.status(403).json({ error: 'Voting rights suspended: effective reputation below 10' });
+    }
 
     const dir = Number(direction);
     const conf = Number(confidence);
@@ -69,19 +74,7 @@ router.post('/', authMiddleware, verifiedOnly, voteLimiter, async (req, res) => 
     // Increment vote count on news item
     await NewsItem.findByIdAndUpdate(itemId, { $inc: { voteCount: 1 } });
 
-    // Log vote commitment to blockchain (non-blocking)
-    try {
-      const txHash = await blockchainService.logVoteCommitment(
-        hexToBytes32(item.contentHash),
-        hexToBytes32(voteHash)
-      );
-      if (txHash) {
-        vote.onChainTxHash = txHash;
-        await vote.save();
-      }
-    } catch (e) {
-      console.warn('blockchain logVoteCommitment failed (non-fatal):', e.message);
-    }
+    // Blockchain vote logging removed for ERDS demo
 
     // Check anomaly after vote is saved
     await checkAnomaly(req.user.userId);
@@ -89,10 +82,29 @@ router.post('/', authMiddleware, verifiedOnly, voteLimiter, async (req, res) => 
     // Re-evaluate item on every vote
     const updatedItem = await evaluateItem(itemId);
 
+    if (updatedItem.status !== 'classified') {
+      const refreshedUser = await User.findById(req.user.userId);
+      if (refreshedUser) {
+        await touchUserActivity(refreshedUser, {
+          reason: 'vote-activity-refresh',
+          source: 'vote',
+          itemId,
+          direction: dir,
+          confidenceLevel: conf,
+          newLastValidatedActivity: new Date(),
+        });
+      }
+    }
+
     // Broadcast vote update to all connected clients
     await broadcastVoteUpdate(itemId);
 
-    res.status(201).json({ vote, item: updatedItem });
+    const currentUser = await User.findById(req.user.userId).select('-passwordHash -nonce');
+    res.status(201).json({
+      vote,
+      item: updatedItem,
+      currentUser: currentUser ? withUserMetrics(currentUser) : null,
+    });
   } catch (e) {
     if (e.code === 11000) {
       return res.status(409).json({ error: 'You have already voted on this item' });

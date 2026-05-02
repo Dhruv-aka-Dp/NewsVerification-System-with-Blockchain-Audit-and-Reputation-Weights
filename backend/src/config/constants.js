@@ -2,7 +2,7 @@ require('dotenv').config();
 
 module.exports = {
   LAMBDA_DECAY: parseFloat(process.env.LAMBDA_DECAY) || 0.005,
-  MIN_S: parseFloat(process.env.MIN_S) || 5,
+  MIN_S: parseFloat(process.env.MIN_S) || 0.75,
   MIN_C: parseFloat(process.env.MIN_C) || 0.3,
   MAX_UR: parseFloat(process.env.MAX_UR) || 0.6,
   ALPHA: parseFloat(process.env.ALPHA) || 1.5,
@@ -16,4 +16,5 @@ module.exports = {
   ANOMALY_ETA: 0.3,
   STARTING_REPUTATION_PUBLIC: 25,
   STARTING_REPUTATION_SEED: 60,
+  VOTING_REPUTATION_THRESHOLD: parseFloat(process.env.VOTING_REPUTATION_THRESHOLD) || 10,
 };

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useVote } from '../hooks/useVote';
 import { useAuth } from '../hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
+import { useDecay, VOTING_REPUTATION_THRESHOLD } from '../hooks/useDecay';
 
 const DIRECTIONS = [
   { value: 1,  label: '✓ True',      cls: 'win-badge-true' },
@@ -16,16 +16,17 @@ const CONFIDENCES = [
 ];
 
 export default function VotePanel({ item: initialItem, userVote }) {
-  const { user } = useAuth();
-  const navigate = useNavigate();
+  const { user, refreshUser } = useAuth();
   const { castVote, loading, error, item } = useVote(initialItem._id, initialItem);
   const [dir, setDir] = useState(null);
   const [conf, setConf] = useState(null);
   const [done, setDone] = useState(false);
+  const effectiveReputation = useDecay(user);
 
   const displayItem = item || initialItem;
   const alreadyVoted = !!userVote || done;
   const isClassified = displayItem.status === 'classified';
+  const votingSuspended = !!user && effectiveReputation < VOTING_REPUTATION_THRESHOLD;
 
   const C = displayItem.confidence ?? 0;
   const Ur = displayItem.uncertaintyRatio ?? 1;
@@ -35,6 +36,7 @@ export default function VotePanel({ item: initialItem, userVote }) {
     if (!user || dir === null || conf === null) return;
     try {
       await castVote(dir, conf);
+      await refreshUser();
       setDone(true);
     } catch {}
   }
@@ -74,6 +76,10 @@ export default function VotePanel({ item: initialItem, userVote }) {
                 ({userVote.direction === 1 ? 'True' : userVote.direction === -1 ? 'False' : 'Uncertain'}, {userVote.confidence}×)
               </span>
             )}
+          </div>
+        ) : votingSuspended ? (
+          <div style={{ padding: 8, background: '#ffecec', border: '1px solid #ff0000', fontSize: 12, color: '#c00', fontWeight: 700 }}>
+            ⊘ Voting rights suspended — effective reputation is {effectiveReputation.toFixed(2)}, below the {VOTING_REPUTATION_THRESHOLD} threshold.
           </div>
         ) : (
           <>

@@ -65,18 +65,7 @@ async function evaluateItem(itemId) {
     const proofString = `${item.contentHash}:${label}:${T}:${F}:${U}:${C}:${P}`;
     const proofHash = sha256(proofString);
 
-    // Log to blockchain (non-blocking)
-    try {
-      const txHash = await blockchainService.logDecision(
-        hexToBytes32(item.contentHash),
-        label,
-        hexToBytes32(proofHash)
-      );
-      item.onChainTxHash = txHash;
-    } catch (e) {
-      console.warn('Blockchain logDecision failed (non-fatal):', e.message);
-    }
-
+    // Blockchain decision logging removed for ERDS demo
     await item.save();
 
     // Save Decision record
@@ -149,17 +138,7 @@ async function manualClassify(itemId, classification, reviewerId) {
   const proofString = `${item.contentHash}:${classification}:${T}:${F}:${U}:${C}:${P}:reviewer:${reviewerId}`;
   const proofHash = sha256(proofString);
 
-  try {
-    const txHash = await blockchainService.logDecision(
-      hexToBytes32(item.contentHash),
-      classification,
-      hexToBytes32(proofHash)
-    );
-    item.onChainTxHash = txHash;
-  } catch (e) {
-    console.warn('Blockchain logDecision (manual) failed (non-fatal):', e.message);
-  }
-
+  // Blockchain decision logging removed for ERDS demo
   await item.save();
 
   const decision = new Decision({

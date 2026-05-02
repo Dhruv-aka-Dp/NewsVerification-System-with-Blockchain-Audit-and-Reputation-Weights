@@ -3,6 +3,7 @@
    ============================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
 
 :root {
   /* Win98 Core Palette */
@@ -685,8 +686,6 @@ a.win-link:hover {
   --win-font: 'Inter', 'Segoe UI', system-ui, sans-serif;
   --win-font-size: 14px;
 }
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
 
 [data-theme="modern"] body {
   background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);

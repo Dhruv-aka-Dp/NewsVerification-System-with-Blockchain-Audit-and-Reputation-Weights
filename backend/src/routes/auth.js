@@ -5,9 +5,13 @@ const { ethers } = require('ethers');
 const { v4: uuidv4 } = require('uuid');
 const User = require('../models/User');
 const Vote = require('../models/Vote');
+const ReputationEvent = require('../models/ReputationEvent');
 const { authMiddleware } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rateLimit');
 const { STARTING_REPUTATION_PUBLIC } = require('../config/constants');
+const { computeDeltaR, recordReputationEvent } = require('../services/reputationService');
+const { getDemoUserFixture } = require('../services/demoSeedService');
+const { withUserMetrics } = require('../utils/userView');
 
 const router = express.Router();
 const JWT_EXPIRY = '7d';
@@ -24,6 +28,26 @@ function signToken(user) {
     process.env.JWT_SECRET,
     { expiresIn: JWT_EXPIRY }
   );
+}
+
+function toAuthUser(user) {
+  const enriched = withUserMetrics(user);
+  return {
+    id: enriched._id,
+    username: enriched.username,
+    email: enriched.email,
+    walletAddress: enriched.walletAddress,
+    reputation: enriched.reputation,
+    effectiveReputation: enriched.effectiveReputation,
+    canVote: enriched.canVote,
+    is_reviewer: enriched.is_reviewer,
+    is_seed: enriched.is_seed,
+    isVerified: enriched.isVerified,
+    authMethod: enriched.authMethod,
+    lastValidatedActivity: enriched.lastValidatedActivity,
+    totalSubmissions: enriched.totalSubmissions,
+    correctSubmissions: enriched.correctSubmissions,
+  };
 }
 
 // POST /api/auth/register — email/password registration
@@ -51,7 +75,7 @@ router.post('/register', authLimiter, async (req, res) => {
     await user.save();
 
     const token = signToken(user);
-    res.status(201).json({ token, user: { id: user._id, username, email, reputation: user.reputation, isVerified: false } });
+    res.status(201).json({ token, user: toAuthUser(user) });
   } catch (e) {
     console.error('Register error:', e);
     res.status(500).json({ error: 'Internal server error' });
@@ -74,20 +98,7 @@ router.post('/login', authLimiter, async (req, res) => {
     if (!match) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = signToken(user);
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        reputation: user.reputation,
-        is_reviewer: user.is_reviewer,
-        is_seed: user.is_seed,
-        isVerified: user.isVerified,
-        walletAddress: user.walletAddress,
-        authMethod: user.authMethod,
-      },
-    });
+    res.json({ token, user: toAuthUser(user) });
   } catch (e) {
     console.error('Login error:', e);
     res.status(500).json({ error: 'Internal server error' });
@@ -158,17 +169,7 @@ router.post('/wallet-register', authLimiter, async (req, res) => {
     await user.save();
 
     const token = signToken(user);
-    res.status(201).json({
-      token,
-      user: {
-        id: user._id,
-        username,
-        walletAddress: cleanAddress,
-        reputation: user.reputation,
-        isVerified: false,
-        authMethod: 'wallet',
-      },
-    });
+    res.status(201).json({ token, user: toAuthUser(user) });
   } catch (e) {
     console.error('Wallet register error:', e);
     res.status(500).json({ error: 'Internal server error' });
@@ -206,19 +207,7 @@ router.post('/wallet-login', authLimiter, async (req, res) => {
     await user.save();
 
     const token = signToken(user);
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        walletAddress: user.walletAddress,
-        reputation: user.reputation,
-        is_reviewer: user.is_reviewer,
-        is_seed: user.is_seed,
-        isVerified: user.isVerified,
-        authMethod: user.authMethod,
-      },
-    });
+    res.json({ token, user: toAuthUser(user) });
   } catch (e) {
     console.error('Wallet login error:', e);
     res.status(500).json({ error: 'Internal server error' });
@@ -230,7 +219,7 @@ router.get('/me', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-passwordHash -nonce');
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    res.json(withUserMetrics(user));
   } catch (e) {
     console.error('Auth /me error:', e);
     res.status(500).json({ error: 'Internal server error' });
@@ -247,6 +236,114 @@ router.get('/votes', authMiddleware, async (req, res) => {
     res.json(votes);
   } catch (e) {
     console.error('Auth /votes error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/reputation-events — current user's reputation change logs
+router.get('/reputation-events', authMiddleware, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const [events, total] = await Promise.all([
+      ReputationEvent.find({ userId: req.user.userId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      ReputationEvent.countDocuments({ userId: req.user.userId }),
+    ]);
+
+    res.json({
+      items: events,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (e) {
+    console.error('Auth /reputation-events error:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// --- DEMO ENDPOINTS ---
+
+// POST /api/auth/demo/decay
+router.post('/demo/decay', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const days = typeof req.body.days === 'number' && req.body.days > 0 ? req.body.days : 5;
+    const ms = days * 24 * 60 * 60 * 1000;
+    const newDate = new Date((user.lastValidatedActivity || new Date()).getTime() - ms);
+
+    await recordReputationEvent({
+      user,
+      reason: `decay-${days}-day-shift`,
+      source: 'demo-decay',
+      eventTime: new Date(),
+      newReputation: user.reputation,
+      newLastValidatedActivity: newDate,
+    });
+
+    res.json({ success: true, user: toAuthUser(user), daysSubtracted: days });
+  } catch (e) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/demo/reset
+router.post('/demo/reset', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const fixture = getDemoUserFixture(user.email || user.username);
+    const resetReputation = fixture?.reputation ?? STARTING_REPUTATION_PUBLIC;
+
+    await recordReputationEvent({
+      user,
+      reason: 'demo-reset',
+      source: 'demo-reset',
+      eventTime: new Date(),
+      newReputation: resetReputation,
+      newLastValidatedActivity: new Date(),
+    });
+
+    res.json({ success: true, user: toAuthUser(user) });
+  } catch (e) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/demo/vote
+router.post('/demo/vote', authMiddleware, async (req, res) => {
+  try {
+    const { outcome } = req.body;
+    if (!['correct', 'wrong'].includes(outcome)) {
+      return res.status(400).json({ error: 'outcome must be correct or wrong' });
+    }
+    
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    
+    const deltaR = computeDeltaR(outcome, 1.5, 0); // High confidence, 0 uncertainty
+    const newReputation = Math.max(0, Math.min(100, user.reputation + deltaR));
+
+    await recordReputationEvent({
+      user,
+      reason: outcome === 'correct' ? 'demo-outcome-reward' : 'demo-outcome-penalty',
+      source: 'demo-vote',
+      eventTime: new Date(),
+      newReputation,
+      newLastValidatedActivity: new Date(),
+    });
+
+    res.json({ success: true, user: toAuthUser(user) });
+  } catch (e) {
     res.status(500).json({ error: 'Internal server error' });
   }
 });

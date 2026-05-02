@@ -70,7 +70,13 @@ async function applyClusterPenalties(votes, weightMap) {
  * of vote directions over the last 20 items.
  */
 async function buildPatternClusters(currentVotes) {
-  const userIds = currentVotes.map(v => v.userId.toString());
+  const userIds = currentVotes.map(v => {
+    // Handle both populated objects and ObjectIds
+    if (typeof v.userId === 'object' && v.userId._id) {
+      return v.userId._id.toString();
+    }
+    return v.userId.toString();
+  });
   if (userIds.length < 2) return [];
 
   // For each user, get their last 20 votes across any items

@@ -8,6 +8,7 @@ const blockchainService = require('../services/blockchainService');
 const { computeEvidenceScore } = require('../services/evidenceService');
 const { aggregateItem } = require('../services/aggregationService');
 const { MIN_S, MIN_C, MAX_UR } = require('../config/constants');
+const { withUserMetrics } = require('../utils/userView');
 
 const router = express.Router();
 
@@ -62,19 +63,7 @@ router.post('/', authMiddleware, verifiedOnly, async (req, res) => {
     });
     await item.save();
 
-    // Log to blockchain (non-blocking)
-    try {
-      const txHash = await blockchainService.logSubmission(
-        hexToBytes32(contentHash),
-        hexToBytes32(metadataHash)
-      );
-      if (txHash) {
-        item.onChainTxHash = txHash;
-        await item.save();
-      }
-    } catch (e) {
-      console.warn('blockchain logSubmission failed (non-fatal):', e.message);
-    }
+    // Blockchain submission logging removed for ERDS demo
 
     res.status(201).json(item);
   } catch (e) {
@@ -128,15 +117,16 @@ router.get('/', async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = 30;
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 100));
     const skip = (page - 1) * limit;
-    const total = await User.countDocuments({ is_seed: false });
-    const users = await User.find({ is_seed: false })
-      .select('username reputation isVerified is_reviewer totalSubmissions correctSubmissions createdAt')
+    const query = { email: { $ne: 'admin@newsverify.local' } };
+    const total = await User.countDocuments(query);
+    const users = await User.find(query)
+      .select('username email reputation isVerified is_reviewer is_seed totalSubmissions correctSubmissions createdAt lastValidatedActivity anomalyEta')
       .sort({ reputation: -1 })
       .skip(skip)
       .limit(limit);
-    res.json({ users, total, page, pages: Math.ceil(total / limit) });
+    res.json({ users: users.map(withUserMetrics), total, page, pages: Math.ceil(total / limit) });
   } catch (e) {
     res.status(500).json({ error: 'Internal server error' });
   }

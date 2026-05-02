@@ -4,7 +4,9 @@ const NewsItem = require('../models/NewsItem');
 const User = require('../models/User');
 const { authMiddleware, reviewerOnly } = require('../middleware/auth');
 const { manualClassify } = require('../services/decisionService');
+const { seedDemoDataset } = require('../services/demoSeedService');
 const { STARTING_REPUTATION_SEED, STARTING_REPUTATION_PUBLIC } = require('../config/constants');
+const { withUserMetrics } = require('../utils/userView');
 
 const router = express.Router();
 
@@ -59,7 +61,7 @@ router.get('/users', authMiddleware, reviewerOnly, async (req, res) => {
       .sort({ reputation: -1 })
       .skip(skip)
       .limit(limit);
-    res.json({ users, total, page, pages: Math.ceil(total / limit) });
+    res.json({ users: users.map(withUserMetrics), total, page, pages: Math.ceil(total / limit) });
   } catch (e) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -71,7 +73,7 @@ router.get('/pending-users', authMiddleware, reviewerOnly, async (req, res) => {
     const users = await User.find({ isVerified: false })
       .select('-passwordHash -nonce')
       .sort({ createdAt: -1 });
-    res.json({ users });
+    res.json({ users: users.map(withUserMetrics) });
   } catch (e) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -177,6 +179,21 @@ router.post('/seed', authMiddleware, async (req, res) => {
     res.status(201).json({ id: user._id, username, email, reputation: user.reputation });
   } catch (e) {
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/admin/seed-demo — seed 50 ERDS demo items (reviewer only)
+router.post('/seed-demo', authMiddleware, reviewerOnly, async (req, res) => {
+  try {
+    const result = await seedDemoDataset({ forceReset: true });
+    res.json({
+      success: true,
+      ...result,
+      message: `Demo dataset reset to ${result.items} items with ${result.reputationEvents} tracked reputation updates.`,
+    });
+  } catch (e) {
+    console.error('seed-demo error:', e);
+    res.status(500).json({ error: e.message });
   }
 });
 

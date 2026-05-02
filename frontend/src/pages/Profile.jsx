@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { getMyVotes } from '../utils/api';
+import { getMyVotes, getMyReputationEvents } from '../utils/api';
 
 function getTier(r) {
   if (r >= 70) return { label: 'Trusted', cls: 'win-badge-true', desc: 'High-impact verified contributor' };
@@ -13,15 +13,29 @@ export default function Profile() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [votes, setVotes] = useState([]);
+  const [reputationEvents, setReputationEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('reputation'); // 'reputation' or 'votes'
 
   useEffect(() => {
     if (!user) return;
-    getMyVotes().then(v => { setVotes(v); setLoading(false); }).catch(() => setLoading(false));
+    setLoading(true);
+    Promise.all([
+      getMyReputationEvents(1, 50).then(data => setReputationEvents(data.items || [])),
+      getMyVotes().then(v => setVotes(v))
+    ]).finally(() => setLoading(false));
   }, [user]);
 
   if (!user) return <div className="win-loading">Loading...</div>;
   const tier = getTier(user.reputation ?? 0);
+
+  const getEventBadge = (event) => {
+    if (event.reason.includes('reward')) return <span className="win-badge-true">+</span>;
+    if (event.reason.includes('penalty')) return <span className="win-badge-error">−</span>;
+    if (event.reason.includes('decay')) return <span className="win-badge-uncertain">⏳</span>;
+    if (event.reason.includes('seed')) return <span className="win-badge-pending">●</span>;
+    return <span className="win-badge-uncertain">⟳</span>;
+  };
 
   return (
     <div>
@@ -62,17 +76,72 @@ export default function Profile() {
             </tbody></table>
           </div>
 
-          <div className="win-group">
-            <span className="win-group-label">My Votes ({votes.length})</span>
-            {loading?<div className="win-loading">⏳</div>:votes.length===0?<div className="win-text-small win-text-muted" style={{padding:8}}>No votes yet.</div>:(
-              <table className="win-table"><thead><tr><th>Item</th><th>Dir</th><th>Conf</th></tr></thead><tbody>
-                {votes.slice(0,30).map((v,i)=>(<tr key={i} style={{cursor:'pointer'}} onClick={()=>v.itemId?._id&&navigate(`/item/${v.itemId._id}`)}>
-                  <td style={{maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.itemId?.title||'—'}</td>
-                  <td>{v.direction===1?'✓':v.direction===-1?'✗':'?'}</td><td>{v.confidence}×</td>
-                </tr>))}
-              </tbody></table>
-            )}
+          {/* Tabs */}
+          <div className="win-tabs win-mb-4">
+            <button
+              className={`win-tab ${tab === 'reputation' ? 'active' : ''}`}
+              onClick={() => setTab('reputation')}
+            >
+              📊 Reputation Change Log ({reputationEvents.length})
+            </button>
+            <button
+              className={`win-tab ${tab === 'votes' ? 'active' : ''}`}
+              onClick={() => setTab('votes')}
+            >
+              🗳️ My Votes ({votes.length})
+            </button>
           </div>
+
+          {/* Reputation Events Tab */}
+          {tab === 'reputation' && (
+            <div className="win-group">
+              <span className="win-group-label">Reputation Change Logs</span>
+              {loading ? (
+                <div className="win-loading">⏳ Loading...</div>
+              ) : reputationEvents.length === 0 ? (
+                <div className="win-text-small win-text-muted" style={{padding:8}}>No reputation events yet.</div>
+              ) : (
+                <div style={{maxHeight: '400px', overflowY: 'auto'}}>
+                  <table className="win-table"><thead><tr><th style={{width:'40px'}}>Type</th><th>Reason</th><th style={{width:'80px'}}>Change</th><th style={{width:'100px'}}>Date</th></tr></thead><tbody>
+                    {reputationEvents.slice(0, 50).map((event, i) => (
+                      <tr key={i} style={{fontSize: 12}}>
+                        <td style={{textAlign: 'center'}}>{getEventBadge(event)}</td>
+                        <td style={{maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{event.reason}</td>
+                        <td style={{textAlign: 'right', color: event.deltaEffectiveReputation > 0 ? '#080' : event.deltaEffectiveReputation < 0 ? '#c00' : '#666'}}>
+                          {event.deltaEffectiveReputation > 0 ? '+' : ''}{event.deltaEffectiveReputation.toFixed(2)}
+                        </td>
+                        <td style={{textAlign: 'right', fontSize: 11, color: '#666'}}>
+                          {new Date(event.createdAt).toLocaleDateString()} {new Date(event.createdAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody></table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Votes Tab */}
+          {tab === 'votes' && (
+            <div className="win-group">
+              <span className="win-group-label">My Votes</span>
+              {loading ? (
+                <div className="win-loading">⏳</div>
+              ) : votes.length === 0 ? (
+                <div className="win-text-small win-text-muted" style={{padding:8}}>No votes yet.</div>
+              ) : (
+                <div style={{maxHeight: '400px', overflowY: 'auto'}}>
+                  <table className="win-table"><thead><tr><th>Item</th><th style={{width:'40px'}}>Dir</th><th style={{width:'60px'}}>Conf</th></tr></thead><tbody>
+                    {votes.slice(0,50).map((v,i)=>(<tr key={i} style={{cursor:'pointer', fontSize: 12}} onClick={()=>v.itemId?._id&&navigate(`/item/${v.itemId._id}`)}>
+                      <td style={{maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.itemId?.title||'—'}</td>
+                      <td style={{textAlign: 'center'}}>{v.direction===1?'✓':v.direction===-1?'✗':'?'}</td><td style={{textAlign: 'right'}}>{v.confidence}×</td>
+                    </tr>))}
+                  </tbody></table>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="win-flex win-justify-between win-mt-8">
             <button className="win-btn" onClick={()=>navigate('/')}>🏠 Home</button>
           </div>

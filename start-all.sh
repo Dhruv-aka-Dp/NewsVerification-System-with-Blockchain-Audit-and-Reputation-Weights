@@ -82,11 +82,10 @@ cd "$DIR/frontend" && VITE_APP=explorer npx vite --host > /dev/null 2>&1 &
 cd "$DIR/frontend" && VITE_APP=dashboard npx vite --host > /dev/null 2>&1 &
 sleep 3
 
-echo ""
-echo "--- NewsVerify is running ---"
-echo "Main App:          http://localhost:5173"
-echo "On-Chain Explorer: http://localhost:5174/explorer.html"
-echo "Off-Chain Storage: http://localhost:5175/dashboard.html"
+echo "--- Explainable Reputation Decay System (ERDS) Demo is running ---"
+echo "Main App:             http://localhost:5173"
+echo "Reputation Explorer:  http://localhost:5174/explorer.html"
+echo "Off-Chain Storage:    http://localhost:5175/dashboard.html"
 echo ""
 echo "Demo Accounts (pass: demo123): dp, arjun_sharma, priya_meena"
 echo ""

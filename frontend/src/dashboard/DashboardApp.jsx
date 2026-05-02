@@ -11,6 +11,11 @@ function getTier(r) {
   return { label: 'New', cls: 'win-badge-pending' };
 }
 
+function formatDateTime(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString();
+}
+
 export default function DashboardApp() {
   const { theme, toggle } = useTheme();
   const [tab, setTab] = useState('overview');
@@ -24,8 +29,16 @@ export default function DashboardApp() {
 
   // Load users
   useEffect(() => {
-    f('/api/news/leaderboard?page=1')
-      .then(d => { setUsers(d.users || []); setUserTotal(d.total || 0); setLoading(false); })
+    Promise.all([
+      f('/api/news/leaderboard?page=1&limit=100'),
+      f('/api/news?page=1'),
+    ])
+      .then(([userData, newsData]) => {
+        setUsers(userData.users || []);
+        setUserTotal(userData.total || 0);
+        setNewsTotal(newsData.total || 0);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
@@ -43,7 +56,7 @@ export default function DashboardApp() {
   // Stats
   const totalUsers = userTotal;
   const verifiedUsers = users.filter(u => u.isVerified).length;
-  const trustedUsers = users.filter(u => u.reputation >= 70).length;
+  const trustedUsers = users.filter(u => (u.effectiveReputation ?? u.reputation) >= 70).length;
 
   return (
     <div className="win-desktop">
@@ -79,7 +92,7 @@ export default function DashboardApp() {
                       <span className="win-group-label">Database Info</span>
                       <table className="win-table"><tbody>
                         <tr><td style={{fontWeight:700}}>Engine</td><td>MongoDB (In-Memory / Atlas)</td></tr>
-                        <tr><td style={{fontWeight:700}}>Collections</td><td>users, newsitems, votes, decisions</td></tr>
+                        <tr><td style={{fontWeight:700}}>Collections</td><td>users, newsitems, votes, decisions, reputationevents</td></tr>
                         <tr><td style={{fontWeight:700}}>Status</td><td><span className="win-text-success">● Connected</span></td></tr>
                       </tbody></table>
                     </div>
@@ -110,7 +123,7 @@ export default function DashboardApp() {
                       <span className="win-group-label">Tier Distribution</span>
                       <div style={{padding:'8px 0'}}>
                         {['Trusted', 'Standard', 'New'].map(tier => {
-                          const count = users.filter(u => getTier(u.reputation).label === tier).length;
+                          const count = users.filter(u => getTier(u.effectiveReputation ?? u.reputation).label === tier).length;
                           const pct = totalUsers > 0 ? (count / totalUsers * 100) : 0;
                           const colors = { Trusted: '#008000', Standard: '#808000', New: '#808080' };
                           return (
@@ -135,15 +148,18 @@ export default function DashboardApp() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="win-text-small win-mb-4" style={{fontWeight:700}}>User Activity ({totalUsers} total)</div>
                         <table className="win-table">
-                          <thead><tr><th>User</th><th>Tier</th><th>Verified</th><th>Submissions</th><th>Accuracy<InfoIcon variable="accuracy" title="Click to learn about accuracy" /></th></tr></thead>
+                          <thead><tr><th>User</th><th>Role</th><th>Base Rep</th><th>Effective Rep</th><th>Last Interaction</th><th>Verified</th><th>Submissions</th><th>Accuracy<InfoIcon variable="accuracy" title="Click to learn about accuracy" /></th></tr></thead>
                           <tbody>
                             {users.map(u => {
-                              const tier = getTier(u.reputation);
+                              const tier = getTier(u.effectiveReputation ?? u.reputation);
                               const acc = u.totalSubmissions > 0 ? Math.min((u.correctSubmissions||0) / u.totalSubmissions, 1) * 100 : 0;
                               return (
                                 <tr key={u._id} className={selected === u._id ? 'selected' : ''} style={{ cursor: 'pointer' }} onClick={() => setSelected(u._id)}>
                                   <td>{u.username}</td>
-                                  <td><span className={`win-badge ${tier.cls}`}>{tier.label}</span></td>
+                                  <td>{u.is_reviewer ? 'Reviewer' : u.is_seed ? 'Seed' : 'User'}</td>
+                                  <td>{(u.reputation ?? 0).toFixed(2)}</td>
+                                  <td><span className={`win-badge ${tier.cls}`}>{(u.effectiveReputation ?? u.reputation ?? 0).toFixed(2)}</span></td>
+                                  <td className="win-text-small">{formatDateTime(u.lastValidatedActivity)}</td>
                                   <td>{u.isVerified ? '✓' : '⊘'}</td>
                                   <td>{u.totalSubmissions || 0}</td>
                                   <td>{acc.toFixed(0)}%</td>
@@ -166,16 +182,22 @@ export default function DashboardApp() {
                             </div>
                             <div className="win-content">
                               <div className="win-flex win-justify-center win-mb-8">
-                                <span className={`win-badge ${getTier(sel.reputation).cls}`} style={{fontSize:16,padding:'6px 20px'}}>
-                                  {getTier(sel.reputation).label}
+                                <span className={`win-badge ${getTier(sel.effectiveReputation ?? sel.reputation).cls}`} style={{fontSize:16,padding:'6px 20px'}}>
+                                  {getTier(sel.effectiveReputation ?? sel.reputation).label}
                                 </span>
                               </div>
                               <table className="win-table">
                                 <tbody>
+                                  <tr><td style={{fontWeight:700}}>Role</td><td>{sel.is_reviewer ? 'Reviewer' : sel.is_seed ? 'Seed' : 'User'}</td></tr>
+                                  <tr><td style={{fontWeight:700}}>Base Reputation</td><td>{(sel.reputation ?? 0).toFixed(2)}</td></tr>
+                                  <tr><td style={{fontWeight:700}}>Effective Reputation</td><td>{(sel.effectiveReputation ?? sel.reputation ?? 0).toFixed(2)}</td></tr>
                                   <tr><td style={{fontWeight:700}}>Submissions</td><td>{sel.totalSubmissions || 0}</td></tr>
                                   <tr><td style={{fontWeight:700}}>Correct</td><td>{sel.correctSubmissions || 0}</td></tr>
                                   <tr><td style={{fontWeight:700}}>Accuracy<InfoIcon variable="accuracy" title="Click to learn about accuracy" /></td><td>{sel.totalSubmissions ? (Math.min((sel.correctSubmissions||0) / sel.totalSubmissions, 1) * 100).toFixed(0) + '%' : '—'}</td></tr>
                                   <tr><td style={{fontWeight:700}}>Verified</td><td>{sel.isVerified ? '✓ Yes' : '⊘ No'}</td></tr>
+                                  <tr><td style={{fontWeight:700}}>Can Vote</td><td>{sel.canVote ? '✓ Yes' : '⊘ No'}</td></tr>
+                                  <tr><td style={{fontWeight:700}}>Anomaly Eta</td><td>{sel.anomalyEta ?? 1}</td></tr>
+                                  <tr><td style={{fontWeight:700}}>Last Interaction</td><td>{formatDateTime(sel.lastValidatedActivity)}</td></tr>
                                   <tr><td style={{fontWeight:700}}>Joined</td><td>{new Date(sel.createdAt).toLocaleDateString()}</td></tr>
                                 </tbody>
                               </table>
